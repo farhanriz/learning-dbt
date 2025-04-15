@@ -5,9 +5,16 @@ import requests
 import psycopg2
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
-# === Load credentials from cred.env ===
-load_dotenv(dotenv_path="../cred.env")  # <== specify custom env file
+try:
+    # If running from a script
+    env_path = Path(__file__).resolve().parent.parent / "cred.env"
+except NameError:
+    # If running from Jupyter Notebook or interactive shell
+    env_path = Path().resolve().parent / "cred.env"
+
+load_dotenv(dotenv_path=env_path)
 
 DB_CONFIG = {
     "dbname": os.getenv("DB_NAME"),
