@@ -1,17 +1,14 @@
-# Get data from: 
-# Detail:
-
+# import library
 import requests
 import psycopg2
 import os
 from dotenv import load_dotenv
 from pathlib import Path
 
+# load environment
 try:
-    # If running from a script
     env_path = Path(__file__).resolve().parent.parent / "cred.env"
 except NameError:
-    # If running from Jupyter Notebook or interactive shell
     env_path = Path().resolve().parent / "cred.env"
 
 load_dotenv(dotenv_path=env_path)
@@ -24,27 +21,19 @@ DB_CONFIG = {
     "port": os.getenv("DB_PORT")
 }
 
-# Optional: Specify schema name
 API_URL = "https://data.jabarprov.go.id/api-backend/bigdata/disdukcapil_2/od_15922_jml_penduduk__kelompok_pekerjaan_jk_v2?limit=500"
 SCHEMA_NAME = "dbt"
 TABLE_NAME = "westjava_occupation"
 
-# === 2. Fetch Data from API ===
+# get data
 def fetch_data(url):
     print("Fetching data from API...")
     response = requests.get(url)
     if response.status_code == 200:
-        print("Data fetched successfully.")
+        print("Data fetched")
         json_data = response.json()
-        
-        # Try common keys: 'data', 'result', etc.
         if isinstance(json_data, dict):
-            if 'data' in json_data:
-                return json_data['data']
-            elif 'result' in json_data:
-                return json_data['result']
-            else:
-                raise ValueError("Expected 'data' key in JSON response.")
+            return json_data.get('data') or json_data.get('result')
         elif isinstance(json_data, list):
             return json_data
         else:
@@ -52,11 +41,11 @@ def fetch_data(url):
     else:
         raise Exception(f"Failed to fetch data. Status code: {response.status_code}")
 
-# === 3. Connect to PostgreSQL ===
+# connect to db
 def connect_db(config):
     return psycopg2.connect(**config)
 
-# === 4. Create Schema & Table ===
+# create table
 def create_table(cursor, schema, table):
     cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
     cursor.execute(f"""
@@ -67,18 +56,22 @@ def create_table(cursor, schema, table):
             gender TEXT,
             value INTEGER,
             unit TEXT,
-            year INTEGER
+            year INTEGER,
+            updated_at TIMESTAMPTZ DEFAULT (NOW() AT TIME ZONE 'UTC'),
+            UNIQUE (province_name, occupation_group, gender, year)
         )
     """)
 
-# === 5. Insert Data ===
+# insert data
 def insert_data(cursor, schema, table, data):
     for item in data:
         cursor.execute(f"""
-            INSERT INTO {schema}.{table} (id, province_name, occupation_group, gender, value, unit, year)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO {schema}.{table} 
+            (province_name, occupation_group, gender, value, unit, year)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (province_name, occupation_group, gender, year)
+            DO UPDATE SET updated_at = (NOW() AT TIME ZONE 'UTC')
         """, (
-            item.get('id'),
             item.get('nama_provinsi'),
             item.get('kelompok_pekerjaan'),
             item.get('jenis_kelamin'),
@@ -86,8 +79,8 @@ def insert_data(cursor, schema, table, data):
             item.get('satuan'),
             item.get('tahun')
         ))
-
-# === 6. Main ===
+        
+# get the data
 def main():
     try:
         data = fetch_data(API_URL)
@@ -98,9 +91,9 @@ def main():
         insert_data(cursor, SCHEMA_NAME, TABLE_NAME, data)
         conn.commit()
 
-        print("✅ Data successfully inserted into PostgreSQL.")
+        print("Data inserted")
     except Exception as e:
-        print("❌ Error:", e)
+        print("Error:", e)
     finally:
         if 'cursor' in locals(): cursor.close()
         if 'conn' in locals(): conn.close()
